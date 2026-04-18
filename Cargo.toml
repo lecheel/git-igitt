@@ -41,4 +41,4 @@ textwrap = { version = "0.16", default-features = false, optional = false, featu
 ] }
 log4rs = "1.2.0"
 log = "0.4.18"
-gleisbau = "0.7.1"
+gleisbau = { version = "0.7.3" }

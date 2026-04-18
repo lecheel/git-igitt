@@ -470,9 +470,9 @@ dependencies = [
 
 [[package]]
 name = "gleisbau"
-version = "0.7.1"
+version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d413a3eb3643a105ab7a0a9d1424a97fbefba0ce7646ca7a9b71f9c207d95248"
+checksum = "f62d5fddd695288c7bb753bb9018634770675d0eda184e1f10f854a0ac2f7724"
 dependencies = [
  "atty",
  "chrono",
@@ -483,7 +483,6 @@ dependencies = [
  "regex",
  "serde",
  "serde_derive",
- "svg",
  "textwrap",
  "toml",
  "yansi",
@@ -1303,12 +1302,6 @@ name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
-
-[[package]]
-name = "svg"
-version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94afda9cd163c04f6bee8b4bf2501c91548deae308373c436f36aeff3cf3c4a3"
 
 [[package]]
 name = "syn"
