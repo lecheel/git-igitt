@@ -3,7 +3,7 @@ name = "git-igitt"
 version = "0.1.21"
 authors = ["Martin Lange <martin_lange_@gmx.net>"]
 description = "Interactive Git terminal application to browse and visualize Git history graphs arranged for your branching model"
-repository = "https://github.com/mlange-42/git-igitt.git"
+repository = "https://github.com/git-bahn/git-igitt.git"
 keywords = ["git", "graph"]
 license = "MIT"
 readme = "README.md"
@@ -41,4 +41,4 @@ textwrap = { version = "0.16", default-features = false, optional = false, featu
 ] }
 log4rs = "1.2.0"
 log = "0.4.18"
-gleisbau = "0.7.1"
+gleisbau = { version = "0.7.3" }

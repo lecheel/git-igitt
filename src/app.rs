@@ -9,6 +9,7 @@ use crate::widgets::models_view::ModelListState;
 use git2::{Commit, DiffDelta, DiffFormat, DiffHunk, DiffLine, DiffOptions as GDiffOptions, Oid};
 use gleisbau::config::get_available_models;
 use gleisbau::graph::BranchInfo;
+use gleisbau::graph::Builder as GraphBuilder;
 use gleisbau::graph::GitGraph;
 use gleisbau::print::unicode::{format_branches, print_unicode};
 use gleisbau::settings::Settings;
@@ -156,6 +157,7 @@ impl App {
         }
     }
 
+    /// Add the fully rendered graph to application state
     pub fn with_graph(
         mut self,
         graph: GitGraph,
@@ -174,8 +176,12 @@ impl App {
 
         if select_head {
             if let Some(graph) = &self.graph_state.graph {
-                if let Some(index) = graph.indices.get(&graph.head.oid) {
-                    self.graph_state.selected = Some(*index);
+                let head_idx = {
+                    let tracks = graph.tracks.lock().unwrap();
+                    tracks.indices.get(&graph.head.oid).copied()
+                };
+                if let Some(index) = head_idx {
+                    self.graph_state.selected = Some(index);
                     self.selection_changed()?;
                 }
             }
@@ -211,14 +217,24 @@ impl App {
         let mut temp = None;
         std::mem::swap(&mut temp, &mut self.graph_state.graph);
         if let Some(graph) = temp {
-            let sel_oid = selected
-                .and_then(|idx| graph.commits.get(idx))
-                .map(|info| info.oid);
+            let sel_oid = {
+                let tracks = graph.tracks.lock().unwrap();
+                selected
+                    .and_then(|idx| tracks.commits.get(idx))
+                    .map(|info| info.oid)
+            };
             let repo = graph.take_repository();
-            let graph = GitGraph::new(repo, settings, None, max_commits)?;
+            let mut builder = GraphBuilder::new()
+                .with_repository(repo)
+                .with_settings(settings);
+            if let Some(max_commits) = max_commits {
+                builder = builder.with_max_count(max_commits);
+            }
+            let graph = builder.build()?;
             let (graph_lines, text_lines, indices) = print_unicode(&graph, settings)?;
 
-            let sel_idx = sel_oid.and_then(|oid| graph.indices.get(&oid)).cloned();
+            let sel_idx =
+                sel_oid.and_then(|oid| graph.tracks.lock().unwrap().indices.get(&oid).cloned());
             let old_idx = self.graph_state.selected;
             self.graph_state.selected = sel_idx;
             if sel_idx.is_some() != old_idx.is_some() {
@@ -336,7 +352,7 @@ impl App {
     pub fn on_home(&mut self) -> Result<bool, String> {
         if let ActiveView::Graph = self.active_view {
             if let Some(graph) = &self.graph_state.graph {
-                if let Some(index) = graph.indices.get(&graph.head.oid) {
+                if let Some(index) = graph.tracks.lock().unwrap().indices.get(&graph.head.oid) {
                     self.graph_state.selected = Some(*index);
                     return Ok(true);
                 } else if !self.graph_state.graph_lines.is_empty() {
@@ -462,8 +478,9 @@ impl App {
                         if let Some(sel) = state.state.selected() {
                             let br = &state.items[sel];
                             if let Some(index) = br.index {
-                                let branch_info = &graph.all_branches[index];
-                                let commit_idx = graph.indices[&branch_info.target];
+                                let branch_info = &graph.tracks.lock().unwrap().all_branches[index];
+                                let commit_idx =
+                                    graph.tracks.lock().unwrap().indices[&branch_info.target];
                                 if is_control {
                                     if self.graph_state.selected.is_some() {
                                         self.graph_state.secondary_selected = Some(commit_idx);
@@ -717,54 +734,83 @@ impl App {
     }
 
     pub fn reload_diff_message(&mut self) -> Result<(), String> {
-        if let Some(graph) = &self.graph_state.graph {
-            self.commit_state.content =
-                if let Some((info, idx)) = self.graph_state.selected.and_then(move |sel_idx| {
-                    graph.commits.get(sel_idx).map(|commit| (commit, sel_idx))
-                }) {
-                    let commit = graph
-                        .repository
-                        .find_commit(info.oid)
-                        .map_err(|err| err.message().to_string())?;
+        // 1. Guard against missing graph state
+        let graph = match &self.graph_state.graph {
+            Some(g) => g,
+            None => return Ok(()),
+        };
 
-                    let head_idx = graph.indices.get(&graph.head.oid);
-                    let head = if head_idx == Some(&idx) {
-                        Some(&graph.head)
-                    } else {
-                        None
-                    };
-
-                    let hash_color = if self.color { Some(HASH_COLOR) } else { None };
-                    let branches = format_branches(graph, info, head, self.color);
-                    let message_fmt = crate::util::format::format(&commit, branches, hash_color);
-
-                    let compare_to = if let Some(sel) = self.graph_state.secondary_selected {
-                        let sec_selected_info = graph.commits.get(sel);
-                        if let Some(info) = sec_selected_info {
-                            Some(
-                                graph
-                                    .repository
-                                    .find_commit(info.oid)
-                                    .map_err(|err| err.message().to_string())?,
-                            )
-                        } else {
-                            commit.parent(0).ok()
-                        }
-                    } else {
-                        commit.parent(0).ok()
-                    };
-                    let comp_oid = compare_to.as_ref().map(|c| c.id());
-
-                    Some(CommitViewInfo::new(
-                        message_fmt,
-                        StatefulList::default(),
-                        info.oid,
-                        comp_oid.unwrap_or_else(Oid::zero),
-                    ))
-                } else {
-                    None
+        // 2. Extract OIDs and Head status under a short-lived lock
+        let (sel_idx, info_oid, is_head, secondary_oid) = {
+            let sel_idx = match self.graph_state.selected {
+                Some(idx) => idx,
+                None => {
+                    self.commit_state.content = None;
+                    return Ok(());
                 }
-        }
+            };
+
+            let tracks = graph.tracks.lock().unwrap();
+            let commit_info = tracks
+                .commits
+                .get(sel_idx)
+                .ok_or("Selected index out of bounds")?;
+            let head_idx = tracks.indices.get(&graph.head.oid);
+
+            let sec_oid = self
+                .graph_state
+                .secondary_selected
+                .and_then(|idx| tracks.commits.get(idx))
+                .map(|info| info.oid);
+
+            (
+                sel_idx,
+                commit_info.oid,
+                head_idx == Some(&sel_idx),
+                sec_oid,
+            )
+        };
+
+        // 3. Resolve Git objects
+        let commit = graph
+            .repository
+            .find_commit(info_oid)
+            .map_err(|err| err.message().to_string())?;
+
+        let compare_to = match secondary_oid {
+            Some(oid) => Some(
+                graph
+                    .repository
+                    .find_commit(oid)
+                    .map_err(|e| e.message().to_string())?,
+            ),
+            None => commit.parent(0).ok(),
+        };
+
+        // 4. Format the UI message
+        let branches = {
+            let head = if is_head { Some(&graph.head) } else { None };
+            let tracks = graph.tracks.lock().unwrap();
+            let info = tracks.commits.get(sel_idx).unwrap(); // Safe: validated in step 2
+            let layout = &graph.layout;
+            let labels = &graph.labels;
+            format_branches(layout, info, labels, head, self.color)
+        };
+
+        let hash_color = if self.color { Some(HASH_COLOR) } else { None };
+        let message_fmt = crate::util::format::format(&commit, branches, hash_color);
+
+        // 5. Update state
+        self.commit_state.content = Some(CommitViewInfo::new(
+            message_fmt,
+            StatefulList::default(),
+            info_oid,
+            compare_to
+                .as_ref()
+                .map(|c| c.id())
+                .unwrap_or_else(Oid::zero),
+        ));
+
         Ok(())
     }
 
@@ -803,81 +849,99 @@ impl App {
     }
 
     pub fn file_changed(&mut self, reset_scroll: bool) -> Result<(), String> {
-        if let (Some(graph), Some(state)) = (&self.graph_state.graph, &self.commit_state.content) {
-            self.diff_state.content = if let Some((info, sel_index)) = self
+        // 1. Extract core state early to reduce indentation
+        let (graph, state) = match (&self.graph_state.graph, &self.commit_state.content) {
+            (Some(g), Some(s)) => (g, s),
+            _ => return Ok(()),
+        };
+
+        // 2. Resolve OIDs and selection index first to solve the borrow/lock issue
+        let (commit_oid, secondary_oid, sel_index) = {
+            let sel_idx = match self.graph_state.selected {
+                Some(idx) => idx,
+                None => return Ok(()),
+            };
+
+            let sel_index = match state.diffs.state.selected() {
+                Some(idx) => idx,
+                None => return Ok(()),
+            };
+
+            let tracks = graph.tracks.lock().unwrap();
+            let primary = tracks.commits.get(sel_idx).map(|c| c.oid);
+            let secondary = self
                 .graph_state
-                .selected
-                .and_then(move |sel_idx| graph.commits.get(sel_idx))
-                .and_then(|info| {
-                    state
-                        .diffs
-                        .state
-                        .selected()
-                        .map(|sel_index| (info, sel_index))
-                }) {
-                let commit = graph
+                .secondary_selected
+                .and_then(|idx| tracks.commits.get(idx))
+                .map(|c| c.oid);
+
+            // Lock is dropped here as tracks goes out of scope
+            (
+                primary.ok_or("Selected commit not found")?,
+                secondary,
+                sel_index,
+            )
+        };
+
+        // 3. Logic to fetch Git objects
+        let commit = graph
+            .repository
+            .find_commit(commit_oid)
+            .map_err(|err| err.message().to_string())?;
+
+        let compare_to = match secondary_oid {
+            Some(oid) => Some(
+                graph
                     .repository
-                    .find_commit(info.oid)
-                    .map_err(|err| err.message().to_string())?;
+                    .find_commit(oid)
+                    .map_err(|err| err.message().to_string())?,
+            ),
+            None => commit.parent(0).ok(),
+        };
 
-                let compare_to = if let Some(sel) = self.graph_state.secondary_selected {
-                    let sec_selected_info = graph.commits.get(sel);
-                    if let Some(info) = sec_selected_info {
-                        Some(
-                            graph
-                                .repository
-                                .find_commit(info.oid)
-                                .map_err(|err| err.message().to_string())?,
-                        )
-                    } else {
-                        commit.parent(0).ok()
-                    }
-                } else {
-                    commit.parent(0).ok()
-                };
-                let comp_oid = compare_to.as_ref().map(|c| c.id());
+        // 4. Generate the diff and highlight
+        let selection = &state.diffs.items[sel_index];
+        let diffs = get_file_diffs(
+            graph,
+            compare_to.as_ref(),
+            &commit,
+            &selection.file,
+            &self.diff_options,
+            &self.settings.tab_spaces,
+        )?;
 
-                let selection = &state.diffs.items[sel_index];
-
-                let diffs = get_file_diffs(
-                    graph,
-                    compare_to.as_ref(),
-                    &commit,
-                    &selection.file,
-                    &self.diff_options,
-                    &self.settings.tab_spaces,
-                )?;
-
-                let highlighted = if self.color
-                    && self.diff_options.syntax_highlight
-                    && self.diff_options.diff_mode != DiffMode::Diff
-                    && diffs.len() == 2
-                {
-                    PathBuf::from(&selection.file)
-                        .extension()
-                        .and_then(|ext| ext.to_str().and_then(|ext| highlight(&diffs[1].0, ext)))
-                } else {
-                    None
-                };
-
-                let mut info = DiffViewInfo::new(
-                    diffs,
-                    highlighted,
-                    info.oid,
-                    comp_oid.unwrap_or_else(Oid::zero),
-                );
-
-                if !reset_scroll {
-                    if let Some(diff_state) = &self.diff_state.content {
-                        info.scroll = diff_state.scroll;
-                    }
-                }
-
-                Some(info)
-            } else {
+        let highlighted = //self.get_highlighting(&diffs, &selection.file);
+        {
+            if !(self.color && self.diff_options.syntax_highlight &&
+                self.diff_options.diff_mode != DiffMode::Diff && diffs.len() == 2) {
                 None
             }
+            else {
+                PathBuf::from(&selection.file)
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .and_then(|ext_str| highlight(&diffs[1].0, ext_str))
+            }
+        };
+
+        // 5. Construct the final state
+        let mut info = DiffViewInfo::new(
+            diffs,
+            highlighted,
+            commit_oid,
+            compare_to
+                .as_ref()
+                .map(|c| c.id())
+                .unwrap_or_else(Oid::zero),
+        );
+
+        if !reset_scroll {
+            if let Some(existing) = &self.diff_state.content {
+                info.scroll = existing.scroll;
+            }
         }
+
+        self.diff_state.content = Some(info);
         Ok(())
     }
 
@@ -1056,6 +1120,9 @@ fn get_branches(graph: &GitGraph) -> Vec<BranchItem> {
         BranchItemType::Heading,
     ));
     let graph_branches: Vec<usize> = graph
+        .tracks
+        .lock()
+        .unwrap()
         .all_branches
         .iter()
         .enumerate()
@@ -1068,12 +1135,13 @@ fn get_branches(graph: &GitGraph) -> Vec<BranchItem> {
         })
         .collect();
     for idx in &graph_branches {
-        let branch: &BranchInfo = &graph.all_branches[*idx];
+        let branch: &BranchInfo = &graph.tracks.lock().unwrap().all_branches[*idx];
+        let branch_visual = graph.layout.track_visual(*idx).unwrap();
         if !branch.is_remote {
             branches.push(BranchItem::new(
                 branch.name.clone(),
                 Some(*idx),
-                branch.visual.term_color,
+                branch_visual.term_color,
                 BranchItemType::LocalBranch,
             ));
         }
@@ -1086,12 +1154,13 @@ fn get_branches(graph: &GitGraph) -> Vec<BranchItem> {
         BranchItemType::Heading,
     ));
     for idx in &graph_branches {
-        let branch: &BranchInfo = &graph.all_branches[*idx];
+        let branch: &BranchInfo = &graph.tracks.lock().unwrap().all_branches[*idx];
+        let branch_visual = graph.layout.track_visual(*idx).unwrap();
         if branch.is_remote {
             branches.push(BranchItem::new(
                 branch.name.clone(),
                 Some(*idx),
-                branch.visual.term_color,
+                branch_visual.term_color,
                 BranchItemType::RemoteBranch,
             ));
         }
@@ -1113,23 +1182,31 @@ fn get_branches(graph: &GitGraph) -> Vec<BranchItem> {
         }
     }
 
-    let mut tags: Vec<_> = graph
-        .all_branches
-        .iter()
-        .enumerate()
-        .filter_map(tag_branch_idx)
-        .filter_map(|idx| {
-            let branch = &graph.all_branches[idx];
-            if let Ok(commit) = graph.repository.find_commit(branch.target) {
+    // Lock graph.tracks once and extract data into a temporary Vec
+    let branch_data: Vec<_> = {
+        let tracks = graph.tracks.lock().unwrap();
+        tracks
+            .all_branches
+            .iter()
+            .enumerate()
+            .filter_map(|(i, b)| {
+                tag_branch_idx((i, b)).map(|idx| {
+                    let b_visual = graph.layout.track_visual(idx).unwrap();
+                    (idx, b.target, b.name.clone(), b_visual.term_color)
+                })
+            })
+            .collect()
+    };
+
+    // Perform the expensive Git operations outside the lock
+    let mut tags: Vec<_> = branch_data
+        .into_iter()
+        .filter_map(|(idx, target, name, color)| {
+            if let Ok(commit) = graph.repository.find_commit(target) {
                 let time = commit.time();
                 Some((
-                    BranchItem::new(
-                        branch.name.clone(),
-                        Some(idx),
-                        branch.visual.term_color,
-                        BranchItemType::Tag,
-                    ),
-                    time.seconds() + time.offset_minutes() as i64 * 60,
+                    BranchItem::new(name, Some(idx), color, BranchItemType::Tag),
+                    time.seconds() + (time.offset_minutes() as i64 * 60),
                 ))
             } else {
                 None

@@ -15,6 +15,7 @@ use git_igitt::{
 use gleisbau::{
     config::{create_config, get_available_models, get_model, get_model_name},
     get_repo,
+    graph::Builder as GraphBuilder,
     graph::GitGraph,
     print::{format::CommitFormat, unicode::print_unicode},
     settings::{
@@ -1006,7 +1007,14 @@ fn create_app(
         .unwrap_or("unknown")
         .to_string();
 
-    let graph = GitGraph::new(repository, settings, None, max_commits)?;
+    let mut builder = GraphBuilder::new()
+        .with_repository(repository)
+        .with_settings(settings);
+    if let Some(max_commits) = max_commits {
+        builder = builder.with_max_count(max_commits);
+    }
+    let graph = builder.build()?;
+
     let branches = get_branches(&graph)?;
     let (graph_lines, text_lines, indices) = print_unicode(&graph, settings)?;
 
