@@ -178,7 +178,7 @@ impl App {
             if let Some(graph) = &self.graph_state.graph {
                 let head_idx = {
                     let tracks = graph.tracks.lock().unwrap();
-                    tracks.indices.get(&graph.head.oid).map(|idx| *idx)
+                    tracks.indices.get(&graph.head.oid).copied()
                 };
                 if let Some(index) = head_idx {
                     self.graph_state.selected = Some(index);
