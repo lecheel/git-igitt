@@ -1,3 +1,16 @@
+pub mod app;
+pub mod dialogs;
+pub mod settings;
+pub mod ui;
+pub mod util;
+pub mod widgets;
+
+use crate::app::DiffMode;
+use crate::settings::AppSettings;
+use crate::{
+    app::{ActiveView, App, CurrentBranches},
+    dialogs::FileDialog,
+};
 use clap::{crate_version, Arg, Command};
 use crossterm::{
     event::{self, Event as CEvent, KeyCode, KeyEventKind, KeyModifiers},
@@ -5,13 +18,6 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use git2::Repository;
-use git_igitt::app::DiffMode;
-use git_igitt::settings::AppSettings;
-use git_igitt::{
-    app::{ActiveView, App, CurrentBranches},
-    dialogs::FileDialog,
-    ui,
-};
 use gleisbau::{
     config::{create_config, get_available_models, get_model, get_model_name},
     get_repo,
