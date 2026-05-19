@@ -122,6 +122,7 @@ fn setup_logger(log_level: &str) {
     let _handle = log4rs::init_config(config).unwrap();
 }
 
+/// Parse command line arguments, read configuration, and run the application.
 fn from_args() -> Result<(), String> {
     let app_dir = AppDirs::new(Some("git-graph"), false).unwrap().config_dir;
     let mut models_dir = app_dir;
@@ -439,6 +440,7 @@ fn from_args() -> Result<(), String> {
     Ok(())
 }
 
+/// Run the application
 fn run(
     mut repository: Option<Repository>,
     mut settings: Settings,
@@ -493,6 +495,7 @@ fn run(
     let next_file_update: &Cell<Option<Instant>> = &Cell::new(None);
     let mut reset_diff_scroll = false;
 
+    // Define lambda function "next_event" for reading one event
     let mut next_event = {
         let mut sx_old = 0;
         let mut sy_old = 0;
@@ -537,6 +540,7 @@ fn run(
     let mut last_key = KeyCode::Esc;
     let mut key_repeat_time = INITIAL_KEY_REPEAT_TIME / 2;
 
+    // Event loop
     loop {
         app = if let Some(mut app) = app.take() {
             terminal.draw(|f| ui::draw(f, &mut app))?;
@@ -988,6 +992,7 @@ pub fn set_model<P: AsRef<Path>>(
     Ok(())
 }
 
+/// Create an App instance, using the provided configuration
 fn create_app(
     repository: Repository,
     settings: &mut Settings,

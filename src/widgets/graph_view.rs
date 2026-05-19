@@ -12,6 +12,7 @@ use unicode_width::UnicodeWidthStr;
 const SCROLL_MARGIN: usize = 3;
 const SCROLLBAR_STR: &str = "\u{2588}";
 
+/// State used to render widget [GraphView]
 #[derive(Default)]
 pub struct GraphViewState {
     pub graph: Option<GitGraph>,
@@ -86,6 +87,8 @@ impl GraphViewState {
     }
 }
 
+/// Stateful widget for rendering the graph. The state is provided by
+/// [GraphViewState]
 #[derive(Default)]
 pub struct GraphView<'a> {
     block: Option<Block<'a>>,
