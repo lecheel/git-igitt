@@ -1,3 +1,5 @@
+#![allow(clippy::collapsible_match)]
+
 pub mod app;
 pub mod dialogs;
 pub mod settings;
