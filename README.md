@@ -39,7 +39,7 @@ Decide for yourself which graph is the most comprehensible. :sunglasses:
 In case you have [Rust](https://www.rust-lang.org/) installed, you can install with `cargo`:
 
 ```
-cargo install git-igitt
+cargo install --locked git-igitt
 ```
 
 ## Usage
