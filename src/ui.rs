@@ -33,7 +33,7 @@ pub fn draw_open_repo<B: Backend>(f: &mut Frame<B>, dialog: &mut FileDialog) {
 
     let location_block = Block::default().borders(Borders::ALL).title(" Path ");
 
-    let paragraph = Paragraph::new(format!("{}", &dialog.location.display())).block(location_block);
+    let paragraph = Paragraph::new(format!("{}", dialog.location.display())).block(location_block);
     f.render_widget(paragraph, top_chunks[0]);
 
     let help = Paragraph::new("  Navigate with Arrows, confirm with Enter, abort with Esc.");

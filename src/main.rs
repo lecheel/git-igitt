@@ -986,7 +986,7 @@ pub fn set_model<P: AsRef<Path>>(
     std::fs::write(&config_path, str).map_err(|err| {
         format!(
             "Can't write repository settings to file {}\n{}",
-            &config_path.display(),
+            config_path.display(),
             err
         )
     })?;
