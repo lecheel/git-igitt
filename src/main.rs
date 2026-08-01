@@ -1,3 +1,18 @@
+#![allow(clippy::collapsible_match)]
+
+pub mod app;
+pub mod dialogs;
+pub mod settings;
+pub mod ui;
+pub mod util;
+pub mod widgets;
+
+use crate::app::DiffMode;
+use crate::settings::AppSettings;
+use crate::{
+    app::{ActiveView, App, CurrentBranches},
+    dialogs::FileDialog,
+};
 use clap::{crate_version, Arg, Command};
 use crossterm::{
     event::{self, Event as CEvent, KeyCode, KeyEventKind, KeyModifiers},
@@ -5,13 +20,6 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use git2::Repository;
-use git_igitt::app::DiffMode;
-use git_igitt::settings::AppSettings;
-use git_igitt::{
-    app::{ActiveView, App, CurrentBranches},
-    dialogs::FileDialog,
-    ui,
-};
 use gleisbau::{
     config::{create_config, get_available_models, get_model, get_model_name},
     get_repo,
@@ -116,6 +124,7 @@ fn setup_logger(log_level: &str) {
     let _handle = log4rs::init_config(config).unwrap();
 }
 
+/// Parse command line arguments, read configuration, and run the application.
 fn from_args() -> Result<(), String> {
     let app_dir = AppDirs::new(Some("git-graph"), false).unwrap().config_dir;
     let mut models_dir = app_dir;
@@ -433,6 +442,7 @@ fn from_args() -> Result<(), String> {
     Ok(())
 }
 
+/// Run the application
 fn run(
     mut repository: Option<Repository>,
     mut settings: Settings,
@@ -487,6 +497,7 @@ fn run(
     let next_file_update: &Cell<Option<Instant>> = &Cell::new(None);
     let mut reset_diff_scroll = false;
 
+    // Define lambda function "next_event" for reading one event
     let mut next_event = {
         let mut sx_old = 0;
         let mut sy_old = 0;
@@ -531,6 +542,7 @@ fn run(
     let mut last_key = KeyCode::Esc;
     let mut key_repeat_time = INITIAL_KEY_REPEAT_TIME / 2;
 
+    // Event loop
     loop {
         app = if let Some(mut app) = app.take() {
             terminal.draw(|f| ui::draw(f, &mut app))?;
@@ -974,7 +986,7 @@ pub fn set_model<P: AsRef<Path>>(
     std::fs::write(&config_path, str).map_err(|err| {
         format!(
             "Can't write repository settings to file {}\n{}",
-            &config_path.display(),
+            config_path.display(),
             err
         )
     })?;
@@ -982,6 +994,7 @@ pub fn set_model<P: AsRef<Path>>(
     Ok(())
 }
 
+/// Create an App instance, using the provided configuration
 fn create_app(
     repository: Repository,
     settings: &mut Settings,

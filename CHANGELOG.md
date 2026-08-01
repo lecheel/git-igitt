@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Upgrade to gleisbau 0.7.3
+
 
 ## [0.1.21] - 2026-02-15
 
