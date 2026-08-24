@@ -178,7 +178,9 @@ fn create_title<'a>(id: &'a str, title: &'a str, hint: &'a str, color: bool) -> 
         let id_span = if color {
             Span::styled(
                 format!(" {} ", id),
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             )
         } else {
             Span::raw(format!(" {} ", id))

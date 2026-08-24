@@ -424,7 +424,6 @@ impl App {
         Ok(reload_file_diff)
     }
 
-
     pub fn jump_to_panel(&mut self, panel: u8) -> Result<bool, String> {
         let mut reload_file_diff = false;
         let new_view = match panel {
