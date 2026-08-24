@@ -192,7 +192,7 @@ fn create_title<'a>(id: &'a str, title: &'a str, hint: &'a str, color: bool) -> 
     if id.is_empty() {
         spans.push(Span::raw(format!(" {}", title)));
     } else {
-        spans.push(Span::raw(format!("{}", title)));
+        spans.push(Span::raw(title.to_string()));
     }
 
     // Add hint with a leading space
